@@ -48,4 +48,4 @@ yarn-error.*
 *.tsbuildinfo
 
 # IDE
-.vscode/
+.vscode/build_apk.sh
