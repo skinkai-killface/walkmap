@@ -1,6 +1,6 @@
 # WalkMap 🚶🗺️
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Expo](https://img.shields.io/badge/Expo-SDK%2056-black?logo=expo)](https://expo.dev)
 [![React Native](https://img.shields.io/badge/React%20Native-0.85-61dafb?logo=react)](https://reactnative.dev)
 [![MapLibre](https://img.shields.io/badge/MapLibre-Native-blue?logo=maplibre)](https://maplibre.org)
@@ -90,5 +90,6 @@ cd android
 
 ## 📄 Лицензия
 
-Проект распространяется под лицензией [MIT](LICENSE).
-Автор: [skinkai-killface](https://github.com/skinkai-killface)
+Copyright (c) 2026 [skinkai-killface](https://github.com/skinkai-killface). Все права защищены.
+
+Исходный код открыт исключительно в ознакомительных целях. Любое использование, копирование, распространение или модификация без предварительного письменного согласия автора запрещены.
