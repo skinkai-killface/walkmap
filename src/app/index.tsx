@@ -7,6 +7,7 @@ import {
   type CameraRef,
 } from "@maplibre/maplibre-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +35,31 @@ type WalkPoint = {
   longitude: number;
   timestamp: number;
 };
+
+const CURRENT_APP_VERSION = Constants.expoConfig?.version || "1.4.0-beta";
+
+function parseSemVer(v: string) {
+  const clean = v.replace(/^v/i, "").trim();
+  const [core, ...pre] = clean.split("-");
+  const parts = core.split(".").map((n) => parseInt(n, 10) || 0);
+  while (parts.length < 3) parts.push(0);
+  return { parts, isPre: pre.length > 0 };
+}
+
+function isNewerVersion(remoteTag: string, localVer: string): boolean {
+  try {
+    const remote = parseSemVer(remoteTag);
+    const local = parseSemVer(localVer);
+    for (let i = 0; i < 3; i++) {
+      if (remote.parts[i] > local.parts[i]) return true;
+      if (remote.parts[i] < local.parts[i]) return false;
+    }
+    if (local.isPre && !remote.isPre) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 type WalkHistoryItem = {
   id: string;
@@ -595,6 +621,14 @@ export default function Index() {
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [nicknameBusy, setNicknameBusy] = useState(false);
   const [accentThemeId, setAccentThemeId] = useState<AccentThemeId>("mint");
+
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<{
+    version: string;
+    notes: string;
+    downloadUrl: string;
+  } | null>(null);
   const insets = useSafeAreaInsets();
 
   const cameraRef = useRef<CameraRef | null>(null);
@@ -965,6 +999,10 @@ export default function Index() {
       }
 
       await restoreActiveWalk();
+
+      setTimeout(() => {
+        checkForUpdates(false);
+      }, 3000);
     } catch {
       showAppDialog({
         title: "Не получилось загрузить данные",
@@ -981,6 +1019,81 @@ export default function Index() {
         JSON.stringify(point),
       );
     } catch {}
+  }
+
+  async function checkForUpdates(manual = false) {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    try {
+      const response = await fetch(
+        "https://api.github.com/repos/skinkai-killface/walkmap/releases",
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+          },
+        }
+      );
+      if (!response.ok) {
+        if (manual) {
+          showAppDialog({
+            title: "Проверка обновлений",
+            message:
+              "Не удалось связаться с сервером GitHub для проверки обновлений. Попробуй позже.",
+            variant: "error",
+          });
+        }
+        return;
+      }
+
+      const releases = await response.json();
+      if (!Array.isArray(releases) || releases.length === 0) {
+        if (manual) {
+          showAppDialog({
+            title: "Обновлений нет",
+            message: `У вас установлена последняя версия (v${CURRENT_APP_VERSION}).`,
+            variant: "info",
+          });
+        }
+        return;
+      }
+
+      for (const rel of releases) {
+        if (rel.draft) continue;
+        const tag = rel.tag_name || "";
+        if (isNewerVersion(tag, CURRENT_APP_VERSION)) {
+          const apkAsset = rel.assets?.find(
+            (a: any) =>
+              typeof a.name === "string" && a.name.toLowerCase().endsWith(".apk")
+          );
+          const downloadUrl = apkAsset?.browser_download_url || rel.html_url;
+          setAvailableUpdate({
+            version: tag,
+            notes: rel.body || "",
+            downloadUrl,
+          });
+          setUpdateModalVisible(true);
+          return;
+        }
+      }
+
+      if (manual) {
+        showAppDialog({
+          title: "Обновлений нет",
+          message: `У вас установлена актуальная версия WalkMap v${CURRENT_APP_VERSION}.`,
+          variant: "info",
+        });
+      }
+    } catch {
+      if (manual) {
+        showAppDialog({
+          title: "Ошибка сети",
+          message: "Проверьте подключение к интернету для проверки обновлений.",
+          variant: "error",
+        });
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
   }
 
   async function getInitialLocation() {
@@ -3023,6 +3136,85 @@ export default function Index() {
         </View>
       </Modal>
 
+      <Modal visible={updateModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.appDialogCard}>
+            <View
+              style={[
+                styles.appDialogIconCircle,
+                { backgroundColor: accentTheme.soft },
+              ]}
+            >
+              <Text style={[styles.appDialogIcon, { color: accentTheme.color }]}>
+                🚀
+              </Text>
+            </View>
+
+            <Text style={styles.appDialogTitle}>Доступно обновление</Text>
+            <Text
+              style={[
+                styles.appDialogText,
+                { color: accentTheme.color, fontWeight: "700", marginBottom: 8 },
+              ]}
+            >
+              WalkMap {availableUpdate?.version}
+            </Text>
+
+            {availableUpdate?.notes ? (
+              <ScrollView style={{ maxHeight: 180, marginVertical: 8 }}>
+                <Text
+                  style={[
+                    styles.appDialogText,
+                    { fontSize: 13, lineHeight: 19, textAlign: "left" },
+                  ]}
+                >
+                  {availableUpdate.notes}
+                </Text>
+              </ScrollView>
+            ) : (
+              <Text style={[styles.appDialogText, { marginVertical: 10 }]}>
+                Вышла новая версия приложения с новыми возможностями и исправлениями.
+              </Text>
+            )}
+
+            <View style={styles.appDialogActionsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.appDialogButton,
+                  styles.appDialogButtonSecondary,
+                  styles.appDialogButtonGap,
+                ]}
+                onPress={() => setUpdateModalVisible(false)}
+              >
+                <Text style={styles.appDialogButtonText}>Позже</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.appDialogButton,
+                  { backgroundColor: accentTheme.color },
+                ]}
+                onPress={() => {
+                  if (availableUpdate?.downloadUrl) {
+                    Linking.openURL(availableUpdate.downloadUrl);
+                  }
+                  setUpdateModalVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.appDialogButtonText,
+                    { color: accentTheme.foreground, fontWeight: "800" },
+                  ]}
+                >
+                  Обновить
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={finishConfirmVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.finishCard}>
@@ -3458,6 +3650,28 @@ export default function Index() {
                 <Text style={styles.menuActionSubtitle}>
                   Уровень, статистика, история и достижения
                 </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuActionButton}
+                onPress={() => checkForUpdates(true)}
+              >
+                <View style={styles.settingsStatusTop}>
+                  <View>
+                    <Text style={styles.menuActionTitle}>Проверить обновления</Text>
+                    <Text style={styles.menuActionSubtitle}>
+                      Текущая версия: v{CURRENT_APP_VERSION}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.accentCurrentName,
+                      { color: accentTheme.color, fontSize: 13 },
+                    ]}
+                  >
+                    {checkingUpdate ? "Проверка..." : "Обновить"}
+                  </Text>
+                </View>
               </TouchableOpacity>
 
               <TouchableOpacity
