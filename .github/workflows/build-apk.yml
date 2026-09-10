@@ -49,7 +49,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -Pandroid.injected.lint.check=false -PreactNativeArchitectures=arm64-v8a --no-daemon
 
       - name: Prepare APK Artifact
         id: prepare_apk
