@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "WalkMap",
+    "slug": "WalkMap",
+    "version": "1.3.0",
+    "orientation": "portrait",
+    "scheme": "walkmap",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "locationWhenInUsePermission": "WalkMap использует геолокацию, чтобы показывать тебя на карте и записывать прогулки.",
+          "locationAlwaysAndWhenInUsePermission": "WalkMap использует геолокацию в фоне, чтобы записывать прогулку с заблокированным экраном."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.dusit137.WalkMap",
+      "versionCode": 4,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
