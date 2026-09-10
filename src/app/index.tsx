@@ -119,20 +119,21 @@ const STORAGE_ACTIVE_WALK_KEY = "walkmap_active_walk";
 const STORAGE_COVERAGE_ROUTES_KEY = "walkmap_coverage_routes";
 const STORAGE_ACCENT_COLOR_KEY = "walkmap_accent_color";
 const STORAGE_LOCAL_PROFILE_KEY = "walkmap_local_profile";
+const STORAGE_LAST_LOCATION_KEY = "walkmap_last_location";
 const LEGACY_LOCAL_SESSION_KEY = "walkmap_local_session";
 const BACKGROUND_LOCATION_TASK = "walkmap_background_location_task";
 
 const CELL_SIZE = 0.00045;
-const DEFAULT_CENTER: [number, number] = [49.6679, 58.6035];
+const DEFAULT_CENTER: [number, number] = [37.6173, 55.7558];
 const MAP_STYLE: StyleSpecification = {
   version: 8,
   name: "WalkMap",
   sources: {
-    carto: {
+    osm: {
       type: "raster",
-      tiles: ["https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"],
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
-      attribution: "© OpenStreetMap contributors © CARTO",
+      attribution: "© OpenStreetMap contributors",
     },
   },
   layers: [
@@ -144,9 +145,9 @@ const MAP_STYLE: StyleSpecification = {
       },
     },
     {
-      id: "carto",
+      id: "osm",
       type: "raster",
-      source: "carto",
+      source: "osm",
       paint: {
         "raster-opacity": 1,
       },
@@ -726,6 +727,12 @@ export default function Index() {
     };
   }, [profileReady, localProfile?.id]);
 
+  useEffect(() => {
+    if (mapReady && currentLocation) {
+      moveMapTo(currentLocation);
+    }
+  }, [mapReady, Boolean(currentLocation)]);
+
   // Timer tick: update display every 3s, sync from storage every 10s
   useEffect(() => {
     let durationTimer: ReturnType<typeof setInterval> | undefined;
@@ -945,6 +952,18 @@ export default function Index() {
         }
       }
 
+      const savedLastLocation = await AsyncStorage.getItem(
+        STORAGE_LAST_LOCATION_KEY,
+      );
+      if (savedLastLocation) {
+        try {
+          const parsed = JSON.parse(savedLastLocation);
+          if (isValidWalkPoint(parsed)) {
+            setCurrentLocation((prev) => prev ?? parsed);
+          }
+        } catch {}
+      }
+
       await restoreActiveWalk();
     } catch {
       showAppDialog({
@@ -955,37 +974,71 @@ export default function Index() {
     }
   }
 
+  async function saveLastLocation(point: WalkPoint) {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_LAST_LOCATION_KEY,
+        JSON.stringify(point),
+      );
+    } catch {}
+  }
+
   async function getInitialLocation() {
+    // 1. Сначала проверяем сохранённую в кэше позицию с прошлого раза
+    try {
+      const cached = await AsyncStorage.getItem(STORAGE_LAST_LOCATION_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (isValidWalkPoint(parsed)) {
+          setCurrentLocation((prev) => prev ?? parsed);
+          moveMapTo(parsed);
+        }
+      }
+    } catch {}
+
     const permission = await Location.requestForegroundPermissionsAsync();
 
     if (permission.status !== "granted") {
       return;
     }
 
-    const location = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
+    // 2. Мгновенно запрашиваем последнюю известную позицию из GPS-кэша системы (0мс задержка)
+    try {
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      if (lastKnown) {
+        const point: WalkPoint = {
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+          timestamp: Date.now(),
+        };
+        setCurrentLocation(point);
+        saveLastLocation(point);
+        moveMapTo(point);
+      }
+    } catch {}
 
-    const point: WalkPoint = {
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-      timestamp: Date.now(),
-    };
+    // 3. Асинхронно уточняем точные свежие координаты
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
 
-    setCurrentLocation(point);
+      const point: WalkPoint = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        timestamp: Date.now(),
+      };
 
-    setTimeout(() => {
+      setCurrentLocation(point);
+      saveLastLocation(point);
       moveMapTo(point);
-    }, 700);
+    } catch {}
   }
 
   function moveMapTo(point: WalkPoint) {
     cameraRef.current?.easeTo({
       center: [point.longitude, point.latitude],
-      duration: 700,
-    });
-
-    cameraRef.current?.zoomTo(15, {
+      zoom: 15,
       duration: 700,
     });
   }
@@ -1246,6 +1299,7 @@ export default function Index() {
 
   async function addWalkPoint(newPoint: WalkPoint) {
     setCurrentLocation(newPoint);
+    saveLastLocation(newPoint);
 
     // Mutate pointsRef in-place to avoid GC pressure from spreading large arrays
     const lastPoint = pointsRef.current[pointsRef.current.length - 1];
@@ -2618,7 +2672,7 @@ export default function Index() {
             center: currentLocation
               ? [currentLocation.longitude, currentLocation.latitude]
               : DEFAULT_CENTER,
-            zoom: 12,
+            zoom: 15,
           }}
         />
 
@@ -2796,6 +2850,7 @@ export default function Index() {
               timestamp: Date.now(),
             };
             setCurrentLocation(freshPoint);
+            saveLastLocation(freshPoint);
             moveMapTo(freshPoint);
           } catch {}
         }}
